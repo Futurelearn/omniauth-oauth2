@@ -56,6 +56,8 @@ module OmniAuth
           @env["rack.session"] ||= {}
         end
         session["omniauth.state"] = params[:state]
+        session["last_omniauth_request"] = Time.zone.now.to_i
+        log :info, "authorize_params: #{session['omniauth.state']}"
         params
       end
 
@@ -65,10 +67,11 @@ module OmniAuth
 
       def callback_phase # rubocop:disable AbcSize, CyclomaticComplexity, MethodLength, PerceivedComplexity
         error = request.params["error_reason"] || request.params["error"]
+        log :info, "Session started #{session["last_omniauth_request"]}: Comparing state #{request.params["state"].inspect} to #{session["omniauth.state"].inspect}"
         if error
           fail!(error, CallbackError.new(request.params["error"], request.params["error_description"] || request.params["error_reason"], request.params["error_uri"]))
         elsif !options.provider_ignores_state && (request.params["state"].to_s.empty? || request.params["state"] != session.delete("omniauth.state"))
-          fail!(:csrf_detected, CallbackError.new(:csrf_detected, "CSRF detected"))
+          fail!(:csrf_detected, CallbackError.new(:csrf_detected, "CSRF detected", "Actual: #{request.params["state"]}"))
         else
           self.access_token = build_access_token
           self.access_token = access_token.refresh! if access_token.expired?
